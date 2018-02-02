@@ -130,7 +130,7 @@ namespace AspNetCore.Identity.DocumentDb.Stores
                 throw new ArgumentNullException(nameof(userId));
             }
 
-            TUser foundUser = await documentClient.ReadDocumentAsync<TUser>(GenerateDocumentUri(userId));
+            TUser foundUser = await documentClient.ReadDocumentAsync<TUser>(GenerateDocumentUri(userId), new RequestOptions { PartitionKey = new PartitionKey("@fake.com") });
 
             return foundUser;
         }
@@ -145,7 +145,7 @@ namespace AspNetCore.Identity.DocumentDb.Stores
                 throw new ArgumentNullException(nameof(normalizedUserName));
             }
 
-            TUser foundUser = documentClient.CreateDocumentQuery<TUser>(collectionUri)
+            TUser foundUser = documentClient.CreateDocumentQuery<TUser>(collectionUri, new FeedOptions { PartitionKey = new PartitionKey(GetPartitionKey(normalizedUserName)) })
                 .Where(u => u.NormalizedUserName == normalizedUserName && u.DocumentType == typeof(TUser).Name)
                 .AsEnumerable()
                 .FirstOrDefault();
@@ -359,7 +359,7 @@ namespace AspNetCore.Identity.DocumentDb.Stores
                 throw new ArgumentNullException(nameof(claim));
             }
 
-            var result = documentClient.CreateDocumentQuery<TUser>(collectionUri)
+            var result = documentClient.CreateDocumentQuery<TUser>(collectionUri, new FeedOptions { EnableCrossPartitionQuery = true })
                 .SelectMany(u => u.Claims
                     .Where(c => c.Type == claim.Type && c.Value == claim.Value)
                     .Select(c => u)
@@ -446,7 +446,14 @@ namespace AspNetCore.Identity.DocumentDb.Stores
                 throw new ArgumentNullException(nameof(loginProvider));
             }
 
-            TUser user = documentClient.CreateDocumentQuery<TUser>(collectionUri)
+            var feedOptions = new FeedOptions();
+
+            if (loginProvider.Contains("@"))
+                feedOptions.PartitionKey = new PartitionKey(loginProvider.Substring(loginProvider.IndexOf("@") + 1));
+            else
+                feedOptions.EnableCrossPartitionQuery = true;
+
+            TUser user = documentClient.CreateDocumentQuery<TUser>(collectionUri, new FeedOptions { EnableCrossPartitionQuery = true })
                 .SelectMany(u => u.Logins
                     .Where(l => l.LoginProvider == loginProvider && l.ProviderKey == providerKey)
                     .Select(l => u)
@@ -551,9 +558,21 @@ namespace AspNetCore.Identity.DocumentDb.Stores
                 throw new ArgumentNullException(nameof(normalizedRoleName));
             }
 
-            var result = documentClient.CreateDocumentQuery<TUser>(collectionUri)
+            var feedOptions = new FeedOptions();
+            var roleName = normalizedRoleName;
+
+            if (normalizedRoleName.Contains("@"))
+            {
+                feedOptions.PartitionKey = new PartitionKey(normalizedRoleName.Substring(normalizedRoleName.IndexOf("@") + 1));
+                roleName = normalizedRoleName.Substring(0, normalizedRoleName.IndexOf("@"));
+            }
+            else
+                feedOptions.EnableCrossPartitionQuery = true;
+
+            
+            var result = documentClient.CreateDocumentQuery<TUser>(collectionUri, feedOptions)
                 .SelectMany(u => u.Roles
-                    .Where(r => r.NormalizedName == normalizedRoleName)
+                    .Where(r => r.NormalizedName == roleName)
                     .Select(r => u)
                 ).ToList();
 
@@ -784,7 +803,7 @@ namespace AspNetCore.Identity.DocumentDb.Stores
                 throw new ArgumentNullException(nameof(normalizedEmail));
             }
 
-            TUser user = documentClient.CreateDocumentQuery<TUser>(collectionUri)
+            TUser user = documentClient.CreateDocumentQuery<TUser>(collectionUri, new FeedOptions { PartitionKey = new PartitionKey(GetPartitionKey(normalizedEmail)) })
                 .Where(u => u.NormalizedEmail == normalizedEmail && u.DocumentType == typeof(TUser).Name)
                 .AsEnumerable()
                 .FirstOrDefault();
@@ -997,7 +1016,18 @@ namespace AspNetCore.Identity.DocumentDb.Stores
         }
 #endif
 
-#region IDisposable Support
+        #region Private
+        private string GetPartitionKey(string userName)
+        {
+            if (userName.Contains("@"))
+                return userName.Substring(userName.IndexOf("@") + 1);
+
+            return "user";
+        }
+
+        #endregion
+
+        #region IDisposable Support
 
         public void Dispose()
         {

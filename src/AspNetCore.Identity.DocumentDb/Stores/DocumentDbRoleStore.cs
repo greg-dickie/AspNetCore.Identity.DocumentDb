@@ -254,7 +254,7 @@ namespace AspNetCore.Identity.DocumentDb.Stores
                 throw new ArgumentNullException(nameof(roleId));
             }
 
-            TRole role = await documentClient.ReadDocumentAsync<TRole>(GenerateDocumentUri(roleId));
+            TRole role = await documentClient.ReadDocumentAsync<TRole>(GenerateDocumentUri(roleId), new RequestOptions { PartitionKey = new PartitionKey("role") });
 
             return role;
         }
@@ -269,7 +269,7 @@ namespace AspNetCore.Identity.DocumentDb.Stores
                 throw new ArgumentNullException(nameof(normalizedRoleName));
             }
 
-            TRole role = documentClient.CreateDocumentQuery<TRole>(collectionUri)
+            TRole role = documentClient.CreateDocumentQuery<TRole>(collectionUri, new FeedOptions() { PartitionKey = new PartitionKey("role") })
                 .Where(r => r.NormalizedName == normalizedRoleName && r.DocumentType == typeof(TRole).Name)
                 .AsEnumerable()
                 .FirstOrDefault();
